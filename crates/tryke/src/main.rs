@@ -1,3 +1,3 @@
-fn main() -> anyhow::Result<tryke::ExitStatus> {
+fn main() -> tryke::ExitStatus {
     tryke::run()
 }
