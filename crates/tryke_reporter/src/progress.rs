@@ -22,33 +22,6 @@ fn emit_osc(state: u8, value: u8) {
     let _ = handle.flush();
 }
 
-/// Install a Ctrl+C handler that clears the terminal progress indicator
-/// before exiting. Without this, `on_run_complete` — which emits the
-/// clear sequence on a normal finish — is skipped when the user SIGINTs
-/// mid-run, and Ghostty/Windows Terminal/ConEmu leave the tab's
-/// progress bar stuck at its last value.
-///
-/// Also restores the cursor and clears the current line, so reporters
-/// that hide the cursor while drawing an in-terminal status bar (next,
-/// sugar) don't leave the user's terminal in a hidden-cursor state.
-///
-/// Idempotent: `ctrlc::set_handler` errors if called twice, which we
-/// ignore.
-pub fn install_cleanup_handler() {
-    let _ = ctrlc::set_handler(|| {
-        emit_osc(0, 0);
-        let stderr = io::stderr();
-        let mut handle = stderr.lock();
-        // \r\x1b[2K clears the in-terminal status bar line; \x1b[?25h
-        // shows the cursor in case it was hidden by `LiveArea`.
-        let _ = write!(handle, "\r\x1b[2K\x1b[?25h");
-        let _ = handle.flush();
-        // 128 + SIGINT(2). Matches the exit status of an un-handled
-        // Ctrl+C so wrappers (shells, make, uv run) see the usual signal.
-        std::process::exit(130);
-    });
-}
-
 #[must_use]
 pub fn supports_progress() -> bool {
     use std::env;
@@ -123,6 +96,11 @@ impl<R: Reporter> Reporter for ProgressReporter<R> {
         self.inner.on_run_complete(summary);
     }
 
+    fn cleanup(&mut self) {
+        emit_osc(0, 0);
+        self.inner.cleanup();
+    }
+
     fn on_collect_complete(&mut self, tests: &[TestItem]) {
         self.inner.on_collect_complete(tests);
     }
@@ -168,6 +146,7 @@ mod tests {
         started: bool,
         results: Vec<String>,
         completed: bool,
+        cleaned: bool,
     }
 
     impl RecordingReporter {
@@ -176,6 +155,7 @@ mod tests {
                 started: false,
                 results: Vec::new(),
                 completed: false,
+                cleaned: false,
             }
         }
     }
@@ -191,6 +171,10 @@ mod tests {
 
         fn on_run_complete(&mut self, _summary: &RunSummary) {
             self.completed = true;
+        }
+
+        fn cleanup(&mut self) {
+            self.cleaned = true;
         }
     }
 
@@ -254,6 +238,9 @@ mod tests {
         });
         assert!(reporter.inner.completed);
         assert_eq!(reporter.inner.results.len(), 2);
+
+        reporter.cleanup();
+        assert!(reporter.inner.cleaned);
     }
 
     #[test]
@@ -306,13 +293,5 @@ mod tests {
         let reporter = ProgressReporter::new(inner);
         let recovered = reporter.into_inner();
         assert!(!recovered.started);
-    }
-
-    #[test]
-    fn install_cleanup_handler_is_idempotent() {
-        // Second call would error out from ctrlc::set_handler — the
-        // function swallows that. Asserting no panic is the contract.
-        install_cleanup_handler();
-        install_cleanup_handler();
     }
 }

@@ -380,4 +380,4 @@ tryke test [OPTIONS] [PATHS]...
 
   Number of worker processes.
 
-  Defaults to `min(test_count, cpu_count)`. Set to `1` to run tests in a single worker (useful when debugging concurrency issues).
+  Defaults to the CPU count. Set to `1` to run tests in a single worker, which is useful when debugging concurrency issues.
