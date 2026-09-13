@@ -144,22 +144,32 @@ impl ProjectMetadata {
 
     /// Apply the closest discovered `[tool.tryke]` configuration.
     pub fn apply_configuration_file(&mut self) {
+        let Some(config_path) = find_config_root(&self.root) else {
+            return;
+        };
+        self.apply_configuration_file_from_path(&config_path);
+    }
+
+    pub fn apply_configuration_file_from_path(&mut self, config_path: &Path) {
         self.config_file = None;
         self.options = OptionsLayer::new(TrykeOptions::default(), &self.root);
 
-        let Some(config_root) = find_config_root(&self.root) else {
-            return;
-        };
-        let config_path = config_root.join("pyproject.toml");
-        let Some(options) = fs::read_to_string(&config_path)
-            .ok()
-            .and_then(|contents| parse_toml(&contents))
-        else {
+        let Some(options) = fs::read_to_string(config_path).ok().and_then(|contents| {
+            if config_path.file_name() == Some(std::ffi::OsStr::new("tryke.toml")) {
+                parse_tryke_toml(&contents)
+            } else {
+                parse_toml(&contents)
+            }
+        }) else {
             return;
         };
 
-        self.options = OptionsLayer::new(options, &config_root);
-        self.config_file = Some(config_path);
+        let config_root = config_path
+            .parent()
+            .expect("The config file should have a parent.");
+
+        self.options = OptionsLayer::new(options, config_root);
+        self.config_file = Some(config_path.to_path_buf());
     }
 
     /// Apply CLI arguments as the highest-precedence configuration layer.
@@ -371,16 +381,19 @@ pub fn resolve_project_root(start: &Path) -> PathBuf {
 
 #[must_use]
 pub fn find_config_root(start: &Path) -> Option<PathBuf> {
-    start
-        .ancestors()
-        .find(|dir| {
-            let pyproject = dir.join("pyproject.toml");
-            let Ok(contents) = fs::read_to_string(pyproject) else {
-                return false;
-            };
-            parse_toml(&contents).is_some()
-        })
-        .map(Path::to_path_buf)
+    start.ancestors().find_map(|dir| {
+        let tryke = dir.join("tryke.toml");
+        let pyproject = dir.join("pyproject.toml");
+
+        if tryke.exists() {
+            return Some(tryke);
+        }
+
+        let Ok(contents) = fs::read_to_string(&pyproject) else {
+            return None;
+        };
+        parse_toml(&contents).map(|_| pyproject)
+    })
 }
 
 fn resolve_python_value(value: &str, base: &Path) -> String {
@@ -487,6 +500,10 @@ fn parse_toml(contents: &str) -> Option<TrykeOptions> {
     toml::from_str::<PyprojectToml>(contents).ok()?.tool?.tryke
 }
 
+fn parse_tryke_toml(contents: &str) -> Option<TrykeOptions> {
+    toml::from_str::<TrykeOptions>(contents).ok()
+}
+
 #[derive(Debug, Default, Deserialize)]
 struct PyprojectToml {
     tool: Option<PyprojectTool>,
@@ -568,6 +585,23 @@ mod tests {
             project.cache_dir(),
             Some(project.root().join(".cli-cache").as_path())
         );
+    }
+    #[test]
+    fn applies_explicit_configuration_file() {
+        let dir = tempdir();
+
+        let config_path = dir.path().join("tryke.toml");
+
+        fs::write(&config_path, "exclude = [\"from-explicit-file\"]\n").expect("write config");
+
+        let mut metadata = ProjectMetadata::new(dir.path());
+        metadata.apply_configuration_file_from_path(&config_path);
+
+        assert_eq!(
+            metadata.options().exclude,
+            Some(vec!["from-explicit-file".into()])
+        );
+        assert_eq!(metadata.config_file(), Some(config_path.as_path()));
     }
 
     #[test]
@@ -744,6 +778,39 @@ mod tests {
 
         let config = load_without_environment(&nested, TrykeOptions::default());
         assert_eq!(config.discovery().exclude, vec!["generated"]);
+    }
+
+    #[test]
+    fn loads_tryke_toml() {
+        let dir = tempdir();
+
+        fs::write(dir.path().join("tryke.toml"), "exclude = [\"generated\"]\n")
+            .expect("write tryke config");
+
+        let config = load_without_environment(dir.path(), TrykeOptions::default());
+
+        assert_eq!(config.discovery().exclude, vec!["generated"]);
+    }
+
+    #[test]
+    fn tryke_toml_takes_precedence_over_pyproject() {
+        let dir = tempdir();
+
+        fs::write(
+            dir.path().join("pyproject.toml"),
+            "[tool.tryke]\nexclude = [\"from-pyproject\"]\n",
+        )
+        .expect("write pyproject");
+
+        fs::write(
+            dir.path().join("tryke.toml"),
+            "exclude = [\"from-tryke\"]\n",
+        )
+        .expect("write tryke config");
+
+        let config = load_without_environment(&dir.path(), TrykeOptions::default());
+
+        assert_eq!(config.discovery().exclude, vec!["from-tryke"]);
     }
 
     #[test]

@@ -81,7 +81,11 @@ pub(crate) fn run_test_command(
     let cwd = env::current_dir()?;
 
     let mut metadata = ProjectMetadata::new(args.root.as_deref().unwrap_or(&cwd));
-    metadata.apply_configuration_file();
+    if let Some(config_file) = &global.config_file {
+        metadata.apply_configuration_file_from_path(config_file);
+    } else {
+        metadata.apply_configuration_file();
+    }
     metadata.apply_cli_args(args.project_options(global));
     let project = Project::from_metadata(metadata);
 
