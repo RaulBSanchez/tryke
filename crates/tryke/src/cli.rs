@@ -67,6 +67,10 @@ pub(crate) struct GlobalArgs {
     /// `<project-root>/.tryke/cache`.
     #[arg(long = "cache-dir", global = true)]
     pub(crate) cache_dir: Option<PathBuf>,
+
+    /// Specify the config file to use
+    #[arg(long = "config-file", global = true)]
+    pub(crate) config_file: Option<PathBuf>,
 }
 
 #[derive(Clone, Debug, ValueEnum)]

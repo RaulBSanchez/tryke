@@ -31,6 +31,10 @@ tryke [OPTIONS] [COMMAND]
 
   Overrides `[tool.tryke] cache_dir` in `pyproject.toml`. Defaults to `<project-root>/.tryke/cache`.
 
+- `--config-file` `<CONFIG_FILE>`
+
+  Specify the config file to use
+
 - `--no-progress`
 
   Disable the terminal's native graphical progress bar.
@@ -64,6 +68,10 @@ tryke clean [OPTIONS]
   Directory for tryke's persistent discovery cache.
 
   Overrides `[tool.tryke] cache_dir` in `pyproject.toml`. Defaults to `<project-root>/.tryke/cache`.
+
+- `--config-file` `<CONFIG_FILE>`
+
+  Specify the config file to use
 
 - `--no-progress`
 
@@ -112,6 +120,10 @@ tryke graph [OPTIONS]
   Show only the slice affected by changes since `HEAD`.
 
   Requires git. Combine with `--base-branch` to diff against a branch instead of the working tree.
+
+- `--config-file` `<CONFIG_FILE>`
+
+  Specify the config file to use
 
 - `--connected-only`
 
@@ -168,6 +180,10 @@ tryke server [OPTIONS]
   Directory for tryke's persistent discovery cache.
 
   Overrides `[tool.tryke] cache_dir` in `pyproject.toml`. Defaults to `<project-root>/.tryke/cache`.
+
+- `--config-file` `<CONFIG_FILE>`
+
+  Specify the config file to use
 
 - `-e`, `--exclude` `<EXCLUDE>`
 
@@ -279,6 +295,10 @@ tryke test [OPTIONS] [PATHS]...
   Collect tests without running them.
 
   Prints the discovered test list and exits. Useful for verifying that filters select the tests you expect.
+
+- `--config-file` `<CONFIG_FILE>`
+
+  Specify the config file to use
 
 - `--dist` `<DIST>`
 
