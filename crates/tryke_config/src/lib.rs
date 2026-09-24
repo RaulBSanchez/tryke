@@ -154,7 +154,6 @@ impl ProjectMetadata {
     /// # Panics
     ///
     /// Panics if the configuration file path has no parent directory.
-
     pub fn apply_configuration_file_from_path(&mut self, config_path: &Path) {
         self.config_file = None;
         self.options = OptionsLayer::new(TrykeOptions::default(), &self.root);
