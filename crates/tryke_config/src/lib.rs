@@ -812,7 +812,7 @@ mod tests {
         )
         .expect("write tryke config");
 
-        let config = load_without_environment(&dir.path(), TrykeOptions::default());
+        let config = load_without_environment(dir.path(), TrykeOptions::default());
 
         assert_eq!(config.discovery().exclude, vec!["from-tryke"]);
     }
