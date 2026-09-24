@@ -149,6 +149,11 @@ impl ProjectMetadata {
         };
         self.apply_configuration_file_from_path(&config_path);
     }
+    /// Applies configuration from the specified configuration file.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the configuration file path has no parent directory.
 
     pub fn apply_configuration_file_from_path(&mut self, config_path: &Path) {
         self.config_file = None;
