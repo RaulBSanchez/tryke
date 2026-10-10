@@ -1,10 +1,10 @@
 use std::env;
 
 use anyhow::Result;
-use tryke_config::{Project, ProjectMetadata};
 use tryke_discovery::Discoverer;
 use tryke_runner::{WorkerPool, WorkerPoolOptions};
 
+use super::load_project;
 use crate::ExitStatus;
 use crate::cli::{GlobalArgs, ServerArgs};
 
@@ -12,15 +12,7 @@ pub(crate) fn run_server_command(args: ServerArgs, global: &GlobalArgs) -> Resul
     let cli_filter = global.verbose.log_level_filter();
     let tryke_log = env::var("TRYKE_LOG").ok();
     let log_level = tryke_config::worker_log_level(tryke_log.as_deref(), cli_filter);
-    let cwd = env::current_dir()?;
-    let mut metadata = ProjectMetadata::new(args.root.as_deref().unwrap_or(&cwd));
-    if let Some(config_file) = &global.config_file {
-        metadata.apply_configuration_file_from_path(config_file);
-    } else {
-        metadata.apply_configuration_file();
-    }
-    metadata.apply_cli_args(args.project_options(global));
-    let project = Project::from_metadata(metadata);
+    let project = load_project(args.root.as_deref(), global, args.project_options(global))?;
     let runtime = tokio::runtime::Runtime::new()?;
 
     runtime.block_on(async move {
