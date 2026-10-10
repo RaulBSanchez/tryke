@@ -1,16 +1,23 @@
-use std::collections::{BTreeMap, HashMap};
+use std::{
+    collections::{BTreeMap, HashMap},
+    env,
+};
 
 use anyhow::Result;
 use tryke_config::Project;
 use tryke_discovery::{Discoverer, resolve_changed_files};
 use tryke_types::HookItem;
 
-use super::load_project;
 use crate::ExitStatus;
 use crate::cli::{GlobalArgs, GraphArgs};
 
 pub(crate) fn run_graph_command(args: GraphArgs, global: &GlobalArgs) -> Result<ExitStatus> {
-    let project = load_project(args.root.as_deref(), global, args.project_options(global))?;
+    let cwd = env::current_dir()?;
+    let project = Project::load(
+        args.root.as_deref().unwrap_or(&cwd),
+        global.config_file.as_deref(),
+        Some(args.project_options(global)),
+    );
 
     if args.fixtures {
         run_fixture_graph(&project)?;

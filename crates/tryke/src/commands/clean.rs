@@ -1,11 +1,18 @@
-use anyhow::Result;
+use std::env;
 
-use super::load_project;
+use anyhow::Result;
+use tryke_config::Project;
+
 use crate::ExitStatus;
 use crate::cli::{CleanArgs, GlobalArgs};
 
 pub(crate) fn run_clean_command(args: CleanArgs, global: &GlobalArgs) -> Result<ExitStatus> {
-    let project = load_project(args.root.as_deref(), global, args.project_options(global))?;
+    let cwd = env::current_dir()?;
+    let project = Project::load(
+        args.root.as_deref().unwrap_or(&cwd),
+        global.config_file.as_deref(),
+        Some(args.project_options(global)),
+    );
     let report = tryke_discovery::clean_project_cache(&project)?;
 
     if report.removed_entries == 0 {

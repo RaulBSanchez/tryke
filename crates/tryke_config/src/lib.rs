@@ -231,8 +231,22 @@ impl Project {
     /// Discover and resolve a project without CLI overrides.
     #[must_use]
     pub fn discover(start: &Path) -> Self {
+        Self::load(start, None, None)
+    }
+
+    /// Load a project from `start`, using `config_file` instead of config
+    /// discovery when given, then applying `overrides` as the CLI layer.
+    #[must_use]
+    pub fn load(start: &Path, config_file: Option<&Path>, overrides: Option<TrykeOptions>) -> Self {
         let mut metadata = ProjectMetadata::new(start);
-        metadata.apply_configuration_file();
+        if let Some(config_file) = config_file {
+            metadata.apply_configuration_file_from_path(config_file);
+        } else {
+            metadata.apply_configuration_file();
+        }
+        if let Some(overrides) = overrides {
+            metadata.apply_cli_args(overrides);
+        }
         Self::from_metadata(metadata)
     }
 
@@ -606,6 +620,65 @@ mod tests {
             Some(vec!["from-explicit-file".into()])
         );
         assert_eq!(metadata.config_file(), Some(config_path.as_path()));
+    }
+
+    #[test]
+    fn load_applies_cli_includes_and_cache_dir_over_discovered_config() {
+        let dir = tempdir();
+        fs::write(
+            dir.path().join("pyproject.toml"),
+            "[tool.tryke]\nexclude = [\"generated\", \"vendor\"]\ncache_dir = \".file-cache\"\n",
+        )
+        .expect("write pyproject");
+
+        let project = Project::load(
+            dir.path(),
+            None,
+            Some(TrykeOptions {
+                include: Some(vec!["generated".into()]),
+                cache_dir: Some(".cli-cache".into()),
+                ..TrykeOptions::default()
+            }),
+        );
+
+        assert_eq!(project.discovery().exclude, vec!["vendor"]);
+        assert_eq!(
+            project.cache_dir(),
+            Some(project.root().join(".cli-cache").as_path())
+        );
+    }
+
+    #[test]
+    fn load_explicit_config_replaces_discovery_and_cli_excludes_win() {
+        let dir = tempdir();
+        fs::write(
+            dir.path().join("pyproject.toml"),
+            "[tool.tryke]\nexclude = [\"auto\"]\ncache_dir = \".auto-cache\"\n",
+        )
+        .expect("write pyproject");
+        let config_dir = dir.path().join("ci");
+        fs::create_dir(&config_dir).expect("create config dir");
+        let config_path = config_dir.join("tryke.toml");
+        fs::write(
+            &config_path,
+            "exclude = [\"explicit\"]\ncache_dir = \".explicit-cache\"\n",
+        )
+        .expect("write tryke config");
+
+        let project = Project::load(
+            dir.path(),
+            Some(&config_path),
+            Some(TrykeOptions {
+                exclude: Some(vec!["cli".into()]),
+                ..TrykeOptions::default()
+            }),
+        );
+
+        assert_eq!(project.discovery().exclude, vec!["cli"]);
+        assert_eq!(
+            project.cache_dir(),
+            Some(config_dir.join(".explicit-cache").as_path())
+        );
     }
 
     #[test]

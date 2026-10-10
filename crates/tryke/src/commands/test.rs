@@ -18,7 +18,7 @@ use tryke_types::{
 };
 use tryke_watcher::{FileChangeBatch, FileWatcher};
 
-use super::{CommandOrigin, load_project};
+use super::CommandOrigin;
 use crate::ExitStatus;
 use crate::cli::{GlobalArgs, TestArgs};
 
@@ -78,7 +78,12 @@ pub(crate) fn run_test_command(
 
     let mut reporter = build_reporter(args.reporter.kind(), verbosity, global.no_progress);
     let runtime = tokio::runtime::Runtime::new()?;
-    let project = load_project(args.root.as_deref(), global, args.project_options(global))?;
+    let cwd = env::current_dir()?;
+    let project = Project::load(
+        args.root.as_deref().unwrap_or(&cwd),
+        global.config_file.as_deref(),
+        Some(args.project_options(global)),
+    );
 
     if args.watch {
         reporter.set_subcommand_label(match origin {
