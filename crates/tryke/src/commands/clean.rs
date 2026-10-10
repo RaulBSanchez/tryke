@@ -11,8 +11,8 @@ pub(crate) fn run_clean_command(args: CleanArgs, global: &GlobalArgs) -> Result<
     let project = Project::load(
         args.root.as_deref().unwrap_or(&cwd),
         global.config_file.as_deref(),
-        Some(args.project_options(global)),
-    );
+        args.project_options(global),
+    )?;
     let report = tryke_discovery::clean_project_cache(&project)?;
 
     if report.removed_entries == 0 {

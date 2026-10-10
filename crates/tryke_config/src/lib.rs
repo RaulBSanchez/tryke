@@ -147,33 +147,43 @@ impl ProjectMetadata {
         let Some(config_path) = find_config_root(&self.root) else {
             return;
         };
-        self.apply_configuration_file_from_path(&config_path);
+        // Discovery stays lenient: a discovered file that can't be read or
+        // parsed leaves the defaults in place. Only an explicit config file
+        // is an error.
+        if let Err(error) = self.apply_configuration_file_from_path(&config_path) {
+            log::debug!("ignoring discovered config: {error}");
+        }
     }
+
     /// Applies configuration from the specified configuration file.
     ///
-    /// # Panics
+    /// A file named `pyproject.toml` is read from its `[tool.tryke]` table;
+    /// any other file is read as a standalone tryke config. A relative path
+    /// is resolved against the current directory, so relative values in the
+    /// file resolve against the file's own directory.
     ///
-    /// Panics if the configuration file path has no parent directory.
-    pub fn apply_configuration_file_from_path(&mut self, config_path: &Path) {
+    /// # Errors
+    ///
+    /// Returns an error if the file can't be read, isn't valid config, or is
+    /// a `pyproject.toml` without a `[tool.tryke]` table. The defaults stay
+    /// applied in that case.
+    pub fn apply_configuration_file_from_path(
+        &mut self,
+        config_path: &Path,
+    ) -> Result<(), ConfigError> {
         self.config_file = None;
         self.options = OptionsLayer::new(TrykeOptions::default(), &self.root);
 
-        let Some(options) = fs::read_to_string(config_path).ok().and_then(|contents| {
-            if config_path.file_name() == Some(std::ffi::OsStr::new("tryke.toml")) {
-                parse_tryke_toml(&contents)
-            } else {
-                parse_toml(&contents)
-            }
-        }) else {
-            return;
-        };
+        let config_path = absolute(config_path);
+        let options = read_config_file(&config_path)?;
 
-        let config_root = config_path
-            .parent()
-            .expect("The config file should have a parent.");
+        // A path that was read as a file always has a parent; fall back to
+        // the project root rather than panicking.
+        let config_root = config_path.parent().unwrap_or(&self.root);
 
         self.options = OptionsLayer::new(options, config_root);
-        self.config_file = Some(config_path.to_path_buf());
+        self.config_file = Some(config_path);
+        Ok(())
     }
 
     /// Apply CLI arguments as the highest-precedence configuration layer.
@@ -231,23 +241,30 @@ impl Project {
     /// Discover and resolve a project without CLI overrides.
     #[must_use]
     pub fn discover(start: &Path) -> Self {
-        Self::load(start, None, None)
+        let mut metadata = ProjectMetadata::new(start);
+        metadata.apply_configuration_file();
+        Self::from_metadata(metadata)
     }
 
     /// Load a project from `start`, using `config_file` instead of config
     /// discovery when given, then applying `overrides` as the CLI layer.
-    #[must_use]
-    pub fn load(start: &Path, config_file: Option<&Path>, overrides: Option<TrykeOptions>) -> Self {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `config_file` is given and can't be loaded.
+    pub fn load(
+        start: &Path,
+        config_file: Option<&Path>,
+        overrides: TrykeOptions,
+    ) -> Result<Self, ConfigError> {
         let mut metadata = ProjectMetadata::new(start);
         if let Some(config_file) = config_file {
-            metadata.apply_configuration_file_from_path(config_file);
+            metadata.apply_configuration_file_from_path(config_file)?;
         } else {
             metadata.apply_configuration_file();
         }
-        if let Some(overrides) = overrides {
-            metadata.apply_cli_args(overrides);
-        }
-        Self::from_metadata(metadata)
+        metadata.apply_cli_args(overrides);
+        Ok(Self::from_metadata(metadata))
     }
 
     /// Return the unresolved project metadata.
@@ -518,8 +535,45 @@ fn parse_toml(contents: &str) -> Option<TrykeOptions> {
     toml::from_str::<PyprojectToml>(contents).ok()?.tool?.tryke
 }
 
-fn parse_tryke_toml(contents: &str) -> Option<TrykeOptions> {
-    toml::from_str::<TrykeOptions>(contents).ok()
+/// Error loading an explicitly requested config file.
+#[derive(Debug, thiserror::Error)]
+pub enum ConfigError {
+    #[error("failed to read config file {}", path.display())]
+    Read {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("failed to parse config file {}", path.display())]
+    Parse {
+        path: PathBuf,
+        #[source]
+        source: toml::de::Error,
+    },
+    #[error("config file {} has no [tool.tryke] table", path.display())]
+    MissingToolTable { path: PathBuf },
+}
+
+fn read_config_file(path: &Path) -> Result<TrykeOptions, ConfigError> {
+    let contents = fs::read_to_string(path).map_err(|source| ConfigError::Read {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    let parse_error = |source| ConfigError::Parse {
+        path: path.to_path_buf(),
+        source,
+    };
+    if path.file_name() == Some(std::ffi::OsStr::new("pyproject.toml")) {
+        toml::from_str::<PyprojectToml>(&contents)
+            .map_err(parse_error)?
+            .tool
+            .and_then(|tool| tool.tryke)
+            .ok_or_else(|| ConfigError::MissingToolTable {
+                path: path.to_path_buf(),
+            })
+    } else {
+        toml::from_str::<TrykeOptions>(&contents).map_err(parse_error)
+    }
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -613,7 +667,9 @@ mod tests {
         fs::write(&config_path, "exclude = [\"from-explicit-file\"]\n").expect("write config");
 
         let mut metadata = ProjectMetadata::new(dir.path());
-        metadata.apply_configuration_file_from_path(&config_path);
+        metadata
+            .apply_configuration_file_from_path(&config_path)
+            .expect("apply config");
 
         assert_eq!(
             metadata.options().exclude,
@@ -634,12 +690,13 @@ mod tests {
         let project = Project::load(
             dir.path(),
             None,
-            Some(TrykeOptions {
+            TrykeOptions {
                 include: Some(vec!["generated".into()]),
                 cache_dir: Some(".cli-cache".into()),
                 ..TrykeOptions::default()
-            }),
-        );
+            },
+        )
+        .expect("load project");
 
         assert_eq!(project.discovery().exclude, vec!["vendor"]);
         assert_eq!(
@@ -668,16 +725,91 @@ mod tests {
         let project = Project::load(
             dir.path(),
             Some(&config_path),
-            Some(TrykeOptions {
+            TrykeOptions {
                 exclude: Some(vec!["cli".into()]),
                 ..TrykeOptions::default()
-            }),
-        );
+            },
+        )
+        .expect("load project");
 
         assert_eq!(project.discovery().exclude, vec!["cli"]);
         assert_eq!(
             project.cache_dir(),
             Some(config_dir.join(".explicit-cache").as_path())
+        );
+    }
+
+    #[test]
+    fn load_reads_custom_named_config_as_standalone() {
+        let dir = tempdir();
+        let config_path = dir.path().join("tryke.ci.toml");
+        fs::write(&config_path, "exclude = [\"slow\"]\n").expect("write config");
+
+        let project = Project::load(dir.path(), Some(&config_path), TrykeOptions::default())
+            .expect("load project");
+
+        assert_eq!(project.discovery().exclude, vec!["slow"]);
+        assert_eq!(
+            project.metadata().config_file(),
+            Some(config_path.as_path())
+        );
+    }
+
+    #[test]
+    fn load_rejects_missing_explicit_config() {
+        let dir = tempdir();
+        let config_path = dir.path().join("tryk.toml");
+
+        let error = Project::load(dir.path(), Some(&config_path), TrykeOptions::default())
+            .expect_err("missing config file");
+
+        assert!(matches!(error, ConfigError::Read { path, .. } if path == config_path));
+    }
+
+    #[test]
+    fn load_rejects_invalid_explicit_config() {
+        let dir = tempdir();
+        let config_path = dir.path().join("tryke.toml");
+        fs::write(&config_path, "exclude = \"generated\"\n").expect("write config");
+
+        let error = Project::load(dir.path(), Some(&config_path), TrykeOptions::default())
+            .expect_err("invalid config file");
+
+        assert!(matches!(error, ConfigError::Parse { path, .. } if path == config_path));
+    }
+
+    #[test]
+    fn load_rejects_explicit_pyproject_without_tryke_table() {
+        let dir = tempdir();
+        let config_path = dir.path().join("pyproject.toml");
+        fs::write(&config_path, "[project]\nname = \"app\"\n").expect("write pyproject");
+
+        let error = Project::load(dir.path(), Some(&config_path), TrykeOptions::default())
+            .expect_err("pyproject without [tool.tryke]");
+
+        assert!(matches!(error, ConfigError::MissingToolTable { path } if path == config_path));
+    }
+
+    #[test]
+    fn load_resolves_relative_explicit_config_against_cwd() {
+        // A cwd-relative path is the shape a user passes as
+        // `--config-file svc/tryke.toml`.
+        let cwd = env::current_dir().expect("cwd");
+        let dir = tempfile::tempdir_in(&cwd).expect("tempdir");
+        let relative_dir = dir.path().strip_prefix(&cwd).expect("relative to cwd");
+        let config_path = relative_dir.join("tryke.toml");
+        fs::write(&config_path, "python = \".venv/bin/python\"\n").expect("write config");
+
+        let project =
+            Project::load(&cwd, Some(&config_path), TrykeOptions::default()).expect("load project");
+
+        assert_eq!(
+            Path::new(project.python()),
+            dir.path().join(".venv/bin/python")
+        );
+        assert_eq!(
+            project.metadata().config_file(),
+            Some(dir.path().join("tryke.toml").as_path())
         );
     }
 

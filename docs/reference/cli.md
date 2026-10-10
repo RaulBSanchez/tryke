@@ -33,7 +33,9 @@ tryke [OPTIONS] [COMMAND]
 
 - `--config-file` `<CONFIG_FILE>`
 
-  Specify the config file to use
+  Config file to use instead of discovering one.
+
+  A `pyproject.toml` is read from its `[tool.tryke]` table; any other file is read as a standalone tryke config. Tryke exits with an error if the file can't be read or parsed.
 
 - `--no-progress`
 
@@ -71,7 +73,9 @@ tryke clean [OPTIONS]
 
 - `--config-file` `<CONFIG_FILE>`
 
-  Specify the config file to use
+  Config file to use instead of discovering one.
+
+  A `pyproject.toml` is read from its `[tool.tryke]` table; any other file is read as a standalone tryke config. Tryke exits with an error if the file can't be read or parsed.
 
 - `--no-progress`
 
@@ -123,7 +127,9 @@ tryke graph [OPTIONS]
 
 - `--config-file` `<CONFIG_FILE>`
 
-  Specify the config file to use
+  Config file to use instead of discovering one.
+
+  A `pyproject.toml` is read from its `[tool.tryke]` table; any other file is read as a standalone tryke config. Tryke exits with an error if the file can't be read or parsed.
 
 - `--connected-only`
 
@@ -183,7 +189,9 @@ tryke server [OPTIONS]
 
 - `--config-file` `<CONFIG_FILE>`
 
-  Specify the config file to use
+  Config file to use instead of discovering one.
+
+  A `pyproject.toml` is read from its `[tool.tryke]` table; any other file is read as a standalone tryke config. Tryke exits with an error if the file can't be read or parsed.
 
 - `-e`, `--exclude` `<EXCLUDE>`
 
@@ -298,7 +306,9 @@ tryke test [OPTIONS] [PATHS]...
 
 - `--config-file` `<CONFIG_FILE>`
 
-  Specify the config file to use
+  Config file to use instead of discovering one.
+
+  A `pyproject.toml` is read from its `[tool.tryke]` table; any other file is read as a standalone tryke config. Tryke exits with an error if the file can't be read or parsed.
 
 - `--dist` `<DIST>`
 

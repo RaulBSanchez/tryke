@@ -82,8 +82,8 @@ pub(crate) fn run_test_command(
     let project = Project::load(
         args.root.as_deref().unwrap_or(&cwd),
         global.config_file.as_deref(),
-        Some(args.project_options(global)),
-    );
+        args.project_options(global),
+    )?;
 
     if args.watch {
         reporter.set_subcommand_label(match origin {

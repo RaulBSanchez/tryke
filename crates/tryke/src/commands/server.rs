@@ -16,8 +16,8 @@ pub(crate) fn run_server_command(args: ServerArgs, global: &GlobalArgs) -> Resul
     let project = Project::load(
         args.root.as_deref().unwrap_or(&cwd),
         global.config_file.as_deref(),
-        Some(args.project_options(global)),
-    );
+        args.project_options(global),
+    )?;
     let runtime = tokio::runtime::Runtime::new()?;
 
     runtime.block_on(async move {

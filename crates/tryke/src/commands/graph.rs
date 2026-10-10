@@ -16,8 +16,8 @@ pub(crate) fn run_graph_command(args: GraphArgs, global: &GlobalArgs) -> Result<
     let project = Project::load(
         args.root.as_deref().unwrap_or(&cwd),
         global.config_file.as_deref(),
-        Some(args.project_options(global)),
-    );
+        args.project_options(global),
+    )?;
 
     if args.fixtures {
         run_fixture_graph(&project)?;
